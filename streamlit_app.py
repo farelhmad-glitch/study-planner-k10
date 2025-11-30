@@ -260,7 +260,7 @@ elif menu == "Input Kegiatan":
             if deadline.strip():
                 parsed = parse_iso_date(deadline.strip())
                 if not parsed:
-                    st.error("Format deadline salah.")
+                    st.error("Format tanggal salah.")
                 else:
                     requested_date = parsed
             else:
@@ -570,4 +570,235 @@ elif menu == "About":
     - Jika ada bug atau fitur tambahan (Google Calendar export, notifikasi desktop), kabari aja.
     """)
 
+# -------------------------
+# Auto-Timer Floating (Bottom-right, always visible)
+# -------------------------
+
+def _build_tasks_for_js(all_tasks, lookahead_days=7):
+    """Return list of task dicts with start/end in ms since epoch for next lookahead_days."""
+    out = []
+    now = dt.now()
+    end_limit = now + timedelta(days=lookahead_days)
+    for t in all_tasks:
+        try:
+            d = parse_iso_date(t.get("date"))
+            if d is None:
+                continue
+            # Only consider tasks within lookahead window
+            if not (now.date() <= d <= end_limit.date()):
+                continue
+            start_hm = t.get("start")
+            end_hm = t.get("end")
+            if not start_hm or not end_hm:
+                continue
+            start_dt = dt.combine(d, dt.strptime(start_hm, "%H:%M").time())
+            end_dt = dt.combine(d, dt.strptime(end_hm, "%H:%M").time())
+            # convert to milliseconds (JS-friendly)
+            out.append({
+                "id": t.get("id"),
+                "mapel": t.get("mapel"),
+                "start_ms": int(start_dt.timestamp() * 1000),
+                "end_ms": int(end_dt.timestamp() * 1000)
+            })
+        except Exception:
+            continue
+    return out
+
+# Render the floating auto-timer component on every page (so it appears app-wide)
+tasks_for_js = _build_tasks_for_js(load_tasks(), lookahead_days=14)  # 2 weeks lookahead
+tasks_json = json.dumps(tasks_for_js)
+
+# Floating style: bottom-right
+html_auto_timer = f"""
+<style>
+#autoTimerBox {{
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9999;
+  background: #0f172a;
+  color: #fff;
+  padding: 14px 18px;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+  width: 260px;
+  font-family: Arial, sans-serif;
+}}
+#autoTimerBox h4 {{ margin: 0 0 6px 0; font-size: 14px; }}
+#autoTimerBox .time {{ font-size: 20px; font-weight: 700; margin-top:6px; }}
+#autoTimerBox button {{ margin-top:8px; padding:6px 8px; border-radius:6px; border:none; cursor:pointer; }}
+#autoTimerBox .stopBtn {{ background:#ef4444; color:white; }}
+#autoTimerBox .muteBtn {{ background:#f59e0b; color:black; margin-left:6px; }}
+#autoTimerBox .small {{ font-size:12px; color:#d1d5db; margin-top:4px; }}
+</style>
+
+<div id="autoTimerBox">
+  <h4>★ Auto Timer Active</h4>
+  <div id="autoTimerContent">
+    <div class="small">Memeriksa jadwal...</div>
+  </div>
+  <div style="text-align:right;">
+    <button id="stopAlarmBtn" class="stopBtn" style="display:none;">STOP ALARM</button>
+    <button id="muteAlarmBtn" class="muteBtn">MUTE</button>
+  </div>
+</div>
+
+<audio id="autoAlarm" src="{ALARM_URL}" preload="auto"></audio>
+
+<script>
+const tasks = {tasks_json};  // injected from Python
+const alarm = document.getElementById('autoAlarm');
+alarm.volume = 1.0;
+let alarmPlaying = false;
+let muted = false;
+let currentActiveId = null;
+let countdownInterval = null;
+
+// helper: format seconds to HH:MM:SS
+function fmtSeconds(sec) {{
+  if (sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${{String(h).padStart(2,'0')}}:${{String(m).padStart(2,'0')}}:${{String(s).padStart(2,'0')}}`;
+  return `${{String(m).padStart(2,'0')}}:${{String(s).padStart(2,'0')}}`;
+}}
+
+// find active or next
+function findActiveTask() {{
+  const now = Date.now();
+  // prefer exact active
+  for (const t of tasks) {{
+    if (now >= t.start_ms && now < t.end_ms) return {{type:'active', task:t}};
+  }}
+  // if none active, find next upcoming (start > now)
+  let next = null;
+  for (const t of tasks) {{
+    if (t.start_ms > now) {{
+      if (!next || t.start_ms < next.start_ms) next = t;
+    }}
+  }}
+  if (next) return {{type:'upcoming', task:next}};
+  return {{type:'none', task:null}};
+}}
+
+function startCountdownFor(taskObj) {{
+  // taskObj has start_ms and end_ms
+  if (!taskObj) return;
+  clearInterval(countdownInterval);
+  currentActiveId = taskObj.id;
+  function tick() {{
+    const now = Date.now();
+    const end_ms = taskObj.end_ms;
+    const start_ms = taskObj.start_ms;
+    let remainingSec;
+    if (now < start_ms) {{
+      // not started yet (show time to start)
+      remainingSec = Math.ceil((start_ms - now) / 1000);
+      document.getElementById('autoTimerContent').innerHTML = `<div class="small">Akan mulai: ${new Date(start_ms).toLocaleString()}</div>
+        <div class="time">${fmtSeconds(remainingSec)}</div>
+        <div class="small">Mata pelajaran: ${taskObj.mapel}</div>`;
+      // do not play alarm
+    }} else {{
+      remainingSec = Math.ceil((end_ms - now) / 1000);
+      document.getElementById('autoTimerContent').innerHTML = `<div class="small">Sedang belajar — selesai:</div>
+        <div class="time">${fmtSeconds(remainingSec)}</div>
+        <div class="small">Mata pelajaran: ${taskObj.mapel}</div>`;
+      if (remainingSec <= 0) {{
+        // time's up
+        clearInterval(countdownInterval);
+        playAlarmLoop();
+        // after alarm, we will let loop continue until STOP pressed or mute
+      }}
+    }}
+  }}
+  tick();
+  countdownInterval = setInterval(() => {{
+    // check if active task changed (maybe updated server-side later)
+    const found = findActiveTask();
+    if (found.type === 'active' && found.task.id !== taskObj.id) {{
+      // switch to new active
+      startCountdownFor(found.task);
+      return;
+    }}
+    tick();
+  }}, 1000);
+}}
+
+function playAlarmLoop() {{
+  if (muted) return;
+  try {{
+    alarm.loop = true;
+    alarm.play().catch(()=>{{}});
+    alarmPlaying = true;
+    document.getElementById('stopAlarmBtn').style.display = 'inline-block';
+  }} catch(e){{ console.error(e); }}
+}}
+
+function stopAlarm() {{
+  try {{
+    alarm.pause();
+    alarm.currentTime = 0;
+    alarm.loop = false;
+    alarmPlaying = false;
+    document.getElementById('stopAlarmBtn').style.display = 'none';
+  }} catch(e){{ console.error(e); }}
+}}
+
+document.getElementById('stopAlarmBtn').onclick = function() {{
+  stopAlarm();
+}};
+
+document.getElementById('muteAlarmBtn').onclick = function() {{
+  muted = !muted;
+  if (muted) {{
+    alarm.muted = true;
+    this.innerText = 'UNMUTE';
+    stopAlarm();
+  }} else {{
+    alarm.muted = false;
+    this.innerText = 'MUTE';
+  }}
+}};
+
+// main loop: keep checking and switch timers locally
+let lastFoundType = null;
+let lastTaskId = null;
+function mainLoop() {{
+  const found = findActiveTask();
+  if (found.type === 'active') {{
+    // start countdown from remaining
+    if (lastTaskId !== found.task.id) {{
+      // new active task
+      startCountdownFor(found.task);
+      lastTaskId = found.task.id;
+    }}
+  }} else if (found.type === 'upcoming') {{
+    // show upcoming countdown (time until start)
+    if (lastTaskId !== found.task.id) {{
+      startCountdownFor(found.task);
+      lastTaskId = found.task.id;
+    }}
+  }} else {{
+    // none
+    clearInterval(countdownInterval);
+    document.getElementById('autoTimerContent').innerHTML = '<div class="small">Tidak ada jadwal aktif.</div>';
+    lastTaskId = null;
+    stopAlarm();
+  }}
+}}
+
+// initial run
+mainLoop();
+// also run every 3 seconds to sync new tasks (this is local polling only)
+setInterval(mainLoop, 3000);
+</script>
+"""
+
+# inject the floating timer on every page
+st.components.v1.html(html_auto_timer, height=0, scrolling=False)
+
 # ensure session-state tasks in memory sync with file
+if st.session_state.tasks != load_tasks():
+    # prefer file on disk as source-of-truth if differ
+    st.session_state.tasks = load_tasks()
