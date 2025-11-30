@@ -646,7 +646,7 @@ html_auto_timer = f"""
 <audio id="autoAlarm" src="{ALARM_URL}" preload="auto"></audio>
 
 <script>
-const tasks = {tasks_json};  // injected from Python
+const tasks = {tasks_json};
 const alarm = document.getElementById('autoAlarm');
 alarm.volume = 1.0;
 let alarmPlaying = false;
@@ -654,7 +654,6 @@ let muted = false;
 let currentActiveId = null;
 let countdownInterval = null;
 
-// helper: format seconds to HH:MM:SS
 function fmtSeconds(sec) {{
   if (sec < 0) sec = 0;
   const h = Math.floor(sec / 3600);
@@ -664,14 +663,11 @@ function fmtSeconds(sec) {{
   return `${{String(m).padStart(2,'0')}}:${{String(s).padStart(2,'0')}}`;
 }}
 
-// find active or next
 function findActiveTask() {{
   const now = Date.now();
-  // prefer exact active
   for (const t of tasks) {{
     if (now >= t.start_ms && now < t.end_ms) return {{type:'active', task:t}};
   }}
-  // if none active, find next upcoming (start > now)
   let next = null;
   for (const t of tasks) {{
     if (t.start_ms > now) {{
@@ -683,47 +679,51 @@ function findActiveTask() {{
 }}
 
 function startCountdownFor(taskObj) {{
-  // taskObj has start_ms and end_ms
   if (!taskObj) return;
   clearInterval(countdownInterval);
   currentActiveId = taskObj.id;
+
   function tick() {{
     const now = Date.now();
     const end_ms = taskObj.end_ms;
     const start_ms = taskObj.start_ms;
     let remainingSec;
+
     if (now < start_ms) {{
-      // not started yet (show time to start)
       remainingSec = Math.ceil((start_ms - now) / 1000);
-      document.getElementById('autoTimerContent').innerHTML = `<div class="small">Akan mulai: ${new Date(start_ms).toLocaleString()}</div>
-        <div class="time">${fmtSeconds(remainingSec)}</div>
-        <div class="small">Mata pelajaran: ${taskObj.mapel}</div>`;
-      // do not play alarm
+      document.getElementById('autoTimerContent').innerHTML =
+        `<div class="small">Akan mulai: \${{new Date(start_ms).toLocaleString()}}</div>
+         <div class="time">\${{fmtSeconds(remainingSec)}}</div>
+         <div class="small">Mata pelajaran: \${{taskObj.mapel}}</div>`;
     }} else {{
       remainingSec = Math.ceil((end_ms - now) / 1000);
-      document.getElementById('autoTimerContent').innerHTML = `<div class="small">Sedang belajar — selesai:</div>
-        <div class="time">${fmtSeconds(remainingSec)}</div>
-        <div class="small">Mata pelajaran: ${taskObj.mapel}</div>`;
+      document.getElementById('autoTimerContent').innerHTML =
+        `<div class="small">Sedang belajar — selesai:</div>
+         <div class="time">\${{fmtSeconds(remainingSec)}}</div>
+         <div class="small">Mata pelajaran: \${{taskObj.mapel}}</div>`;
+
       if (remainingSec <= 0) {{
-        // time's up
         clearInterval(countdownInterval);
         playAlarmLoop();
-        // after alarm, we will let loop continue until STOP pressed or mute
       }}
     }}
   }}
+
   tick();
   countdownInterval = setInterval(() => {{
-    // check if active task changed (maybe updated server-side later)
     const found = findActiveTask();
     if (found.type === 'active' && found.task.id !== taskObj.id) {{
-      // switch to new active
       startCountdownFor(found.task);
       return;
     }}
     tick();
   }}, 1000);
 }}
+</script>
+"""
+
+st.components.v1.html(html_auto_timer, height=0, scrolling=False)
+
 
 function playAlarmLoop() {{
   if (muted) return;
