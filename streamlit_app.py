@@ -788,13 +788,16 @@ function mainLoop() {{
   }}
 }}
 
-# initial run
+html_auto_timer = """
+<script>
+// your JS code here....
+
+// initial run
 mainLoop();
 // also run every 3 seconds to sync new tasks (this is local polling only)
 setInterval(mainLoop, 3000);
 </script>
-"""
-# ← triple-quote DITUTUP DI SINI (sangat penting)
+"""  
 
 # inject the floating timer on every page
 st.components.v1.html(html_auto_timer, height=0, scrolling=False)
