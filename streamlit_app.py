@@ -430,83 +430,123 @@ elif menu == "Edit / Hapus":
                                 save_tasks(updated)
                                 st.success(f"Berhasil reassign: {found['mapel']} -> {found['date']} {found['start']}-{found['end']}")
 
-# --- Timer (with louder looping alarm) ---
+# --- Timer (with louder looping alarm + safe JS formatting) ---
 elif menu == "Timer":
     st.header("Timer dengan alarm looping (lebih keras)")
     st.write("Klik tombol untuk memulai agar browser mengizinkan audio autoplay. Ada tombol STOP untuk menghentikan loop alarm.")
+
     col1, col2 = st.columns(2)
+
+    # ---------------- COUNTDOWN ----------------
     with col1:
         st.subheader("Countdown")
         minutes = st.number_input("Menit", min_value=1, value=30)
+
         if st.button("Mulai Countdown"):
-            # HTML + JS: loop audio, volume 1.0, add STOP button
             html = f"""
             <div id="timer">Waktu: {minutes}:00</div>
-            <audio id="alarm" src="{ALARM_URL}"></audio>
+            <audio id="alarm" src="{ALARM_URL}" preload="auto"></audio>
             <button id="stopBtn">Stop Alarm</button>
+
             <script>
-            var seconds = {minutes}*60;
-            var el = document.getElementById('timer');
-            var alarm = document.getElementById('alarm');
+            const alarm = document.getElementById("alarm");
             alarm.volume = 1.0;
-            var iv = setInterval(function(){{
-                if(seconds<=0){{
-                    clearInterval(iv);
+
+            let seconds = {minutes} * 60;
+            const el = document.getElementById("timer");
+
+            const intervalId = setInterval(() => {{
+                if (seconds <= 0) {{
+                    clearInterval(intervalId);
                     el.innerText = "Waktu Habis!";
                     alarm.loop = true;
-                    alarm.play().catch(()=>{{}});
+                    alarm.play().catch(() => {{}});
                     return;
                 }}
-                var m = Math.floor(seconds/60);
-                var s = seconds%60;
-                el.innerText = "Waktu: "+String(m).padStart(2,'0')+":"+String(s).padStart(2,'0');
+
+                let m = Math.floor(seconds / 60);
+                let s = seconds % 60;
+                el.innerText = "Waktu: " + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
                 seconds--;
-            }},1000);
-            document.getElementById('stopBtn').onclick = function(){{
-                alarm.pause(); alarm.currentTime = 0; alarm.loop = false;
+            }}, 1000);
+
+            document.getElementById("stopBtn").onclick = () => {{
+                alarm.pause();
+                alarm.currentTime = 0;
+                alarm.loop = false;
             }};
             </script>
             """
-            st.components.v1.html(html, height=140)
+
+            st.components.v1.html(html, height=180)
+
+    # ---------------- POMODORO ----------------
     with col2:
         st.subheader("Pomodoro")
         work = st.number_input("Work (menit)", min_value=1, value=25)
         brk = st.number_input("Break (menit)", min_value=1, value=5)
         rounds = st.number_input("Rounds", min_value=1, max_value=8, value=4)
+
         if st.button("Mulai Pomodoro"):
             html = f"""
-            <div id="pom">Pomodoro: siap</div>
-            <audio id="alarm" src="{ALARM_URL}"></audio>
+            <div id="pom">Pomodoro: Siap</div>
+            <audio id="alarm" src="{ALARM_URL}" preload="auto"></audio>
             <button id="stopBtn">Stop Alarm</button>
+
             <script>
-            var alarm = document.getElementById('alarm'); alarm.volume = 1.0;
-            var phases = [];
-            for(var i=0;i<{rounds};i++) phases.push({{label:'Work', seconds:{work}*60}}, {{label:'Break', seconds:{brk}*60}});
-            var idx = 0;
-            var el = document.getElementById('pom');
-            function runPhase(){{
-                if(idx>=phases.length){{ el.innerText='Pomodoro selesai.'; return; }}
-                var phase = phases[idx];
-                var sec = phase.seconds;
-                var iv = setInterval(function(){{
-                    if(sec<=0){{
-                        clearInterval(iv);
-                        alarm.loop = true; alarm.play().catch(()=>{{}});
-                        setTimeout(function(){{ alarm.pause(); alarm.loop=false; alarm.currentTime=0; }}, 2000);
-                        idx++;
-                        runPhase();
-                        return;
-                    }}
-                    var m = Math.floor(sec/60); var s = sec%60;
-                    el.innerText = phase.label + ' ' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
-                    sec--;
-                }},1000);
+            const alarm = document.getElementById("alarm");
+            alarm.volume = 1.0;
+
+            const phases = [];
+            for (let i = 0; i < {rounds}; i++) {{
+                phases.push({{ label: "Work", seconds: {work} * 60 }});
+                phases.push({{ label: "Break", seconds: {brk} * 60 }});
             }}
-            document.getElementById('stopBtn').onclick = function(){ alarm.pause(); alarm.loop=false; alarm.currentTime=0; };
+
+            let index = 0;
+            const el = document.getElementById("pom");
+
+            function runPhase() {{
+                if (index >= phases.length) {{
+                    el.innerText = "Pomodoro selesai.";
+                    return;
+                }}
+
+                const phase = phases[index];
+                let sec = phase.seconds;
+
+                const intervalId = setInterval(() => {{
+                    if (sec <= 0) {{
+                        clearInterval(intervalId);
+                        alarm.loop = true;
+                        alarm.play().catch(() => {{}});
+                        return setTimeout(() => {{
+                            alarm.pause();
+                            alarm.loop = false;
+                            alarm.currentTime = 0;
+                            index++;
+                            runPhase();
+                        }}, 2000);
+                    }}
+
+                    let m = Math.floor(sec / 60);
+                    let s = sec % 60;
+                    el.innerText = phase.label + " " + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+                    sec--;
+                }}, 1000);
+            }}
+
+            document.getElementById("stopBtn").onclick = () => {{
+                alarm.pause();
+                alarm.loop = false;
+                alarm.currentTime = 0;
+            }};
+
             runPhase();
             </script>
             """
-            st.components.v1.html(html, height=180)
+
+            st.components.v1.html(html, height=220)
 
 # --- Export ---
 elif menu == "Export":
