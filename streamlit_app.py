@@ -604,11 +604,10 @@ def _build_tasks_for_js(all_tasks, lookahead_days=7):
             continue
     return out
 
-# Render the floating auto-timer component on every page (so it appears app-wide)
-tasks_for_js = _build_tasks_for_js(load_tasks(), lookahead_days=14)  # 2 weeks lookahead
+# Render the floating auto-timer component on every page
+tasks_for_js = _build_tasks_for_js(load_tasks(), lookahead_days=14)
 tasks_json = json.dumps(tasks_for_js)
 
-# Floating style: bottom-right
 html_auto_timer = f"""
 <style>
 #autoTimerBox {{
@@ -649,6 +648,7 @@ html_auto_timer = f"""
 const tasks = {tasks_json};
 const alarm = document.getElementById('autoAlarm');
 alarm.volume = 1.0;
+
 let alarmPlaying = false;
 let muted = false;
 let currentActiveId = null;
@@ -666,7 +666,8 @@ function fmtSeconds(sec) {{
 function findActiveTask() {{
   const now = Date.now();
   for (const t of tasks) {{
-    if (now >= t.start_ms && now < t.end_ms) return {{type:'active', task:t}};
+    if (now >= t.start_ms && now < t.end_ms)
+      return {{ type: 'active', task: t }};
   }}
   let next = null;
   for (const t of tasks) {{
@@ -674,29 +675,60 @@ function findActiveTask() {{
       if (!next || t.start_ms < next.start_ms) next = t;
     }}
   }}
-  if (next) return {{type:'upcoming', task:next}};
-  return {{type:'none', task:null}};
+  if (next) return {{ type: 'upcoming', task: next }};
+  return {{ type: 'none', task: null }};
 }}
 
+function playAlarmLoop() {{
+  if (muted) return;
+  try {{
+    alarm.loop = true;
+    alarm.play().catch(()=>{});
+    alarmPlaying = true;
+    document.getElementById('stopAlarmBtn').style.display = 'inline-block';
+  }} catch(e) {{
+    console.error(e);
+  }}
+}}
+
+function stopAlarm() {{
+  try {{
+    alarm.pause();
+    alarm.currentTime = 0;
+    alarm.loop = false;
+    alarmPlaying = false;
+    document.getElementById('stopAlarmBtn').style.display = 'none';
+  }} catch(e) {{
+    console.error(e);
+  }}
+}}
+
+document.getElementById('stopAlarmBtn').onclick = () => stopAlarm();
+
+document.getElementById('muteAlarmBtn').onclick = function() {{
+  muted = !muted;
+  alarm.muted = muted;
+  this.innerText = muted ? 'UNMUTE' : 'MUTE';
+  if (muted) stopAlarm();
+}};
+
 function startCountdownFor(taskObj) {{
-  if (!taskObj) return;
   clearInterval(countdownInterval);
   currentActiveId = taskObj.id;
 
   function tick() {{
     const now = Date.now();
-    const end_ms = taskObj.end_ms;
     const start_ms = taskObj.start_ms;
-    let remainingSec;
+    const end_ms = taskObj.end_ms;
 
     if (now < start_ms) {{
-      remainingSec = Math.ceil((start_ms - now) / 1000);
+      const remainingSec = Math.ceil((start_ms - now) / 1000);
       document.getElementById('autoTimerContent').innerHTML =
         `<div class="small">Akan mulai: \${{new Date(start_ms).toLocaleString()}}</div>
          <div class="time">\${{fmtSeconds(remainingSec)}}</div>
          <div class="small">Mata pelajaran: \${{taskObj.mapel}}</div>`;
     }} else {{
-      remainingSec = Math.ceil((end_ms - now) / 1000);
+      const remainingSec = Math.ceil((end_ms - now) / 1000);
       document.getElementById('autoTimerContent').innerHTML =
         `<div class="small">Sedang belajar — selesai:</div>
          <div class="time">\${{fmtSeconds(remainingSec)}}</div>
@@ -719,97 +751,39 @@ function startCountdownFor(taskObj) {{
     tick();
   }}, 1000);
 }}
-</script>
-"""
 
-st.components.v1.html(html_auto_timer, height=0, scrolling=False)
-
-html_auto_timer = """
-<script>
-
-function playAlarmLoop() {
-  if (muted) return;
-  try {
-    alarm.loop = true;
-    alarm.play().catch(()=>{});
-    alarmPlaying = true;
-    document.getElementById('stopAlarmBtn').style.display = 'inline-block';
-  } catch(e) {
-    console.error(e);
-  }
-}
-
-</script>
-"""
-
-function stopAlarm() {{
-  try {{
-    alarm.pause();
-    alarm.currentTime = 0;
-    alarm.loop = false;
-    alarmPlaying = false;
-    document.getElementById('stopAlarmBtn').style.display = 'none';
-  }} catch(e){{ console.error(e); }}
-}}
-
-document.getElementById('stopAlarmBtn').onclick = function() {{
-  stopAlarm();
-}};
-
-document.getElementById('muteAlarmBtn').onclick = function() {{
-  muted = !muted;
-  if (muted) {{
-    alarm.muted = true;
-    this.innerText = 'UNMUTE';
-    stopAlarm();
-  }} else {{
-    alarm.muted = false;
-    this.innerText = 'MUTE';
-  }}
-}};
-
-// main loop: keep checking and switch timers locally
-let lastFoundType = null;
 let lastTaskId = null;
+
 function mainLoop() {{
   const found = findActiveTask();
+
   if (found.type === 'active') {{
-    // start countdown from remaining
     if (lastTaskId !== found.task.id) {{
-      // new active task
       startCountdownFor(found.task);
       lastTaskId = found.task.id;
     }}
   }} else if (found.type === 'upcoming') {{
-    // show upcoming countdown (time until start)
     if (lastTaskId !== found.task.id) {{
       startCountdownFor(found.task);
       lastTaskId = found.task.id;
     }}
   }} else {{
-    // none
     clearInterval(countdownInterval);
-    document.getElementById('autoTimerContent').innerHTML = '<div class="small">Tidak ada jadwal aktif.</div>';
+    document.getElementById('autoTimerContent').innerHTML =
+      '<div class="small">Tidak ada jadwal aktif.</div>';
     lastTaskId = null;
     stopAlarm();
   }}
 }}
 
-html_auto_timer = """
-<script>
-// your JS code here....
-
-// initial run
 mainLoop();
-// also run every 3 seconds to sync new tasks (this is local polling only)
 setInterval(mainLoop, 3000);
-</script>
-"""  
 
-# inject the floating timer on every page
+</script>
+"""
+
 st.components.v1.html(html_auto_timer, height=0, scrolling=False)
 
-# ensure session-state tasks in memory sync with file
+# sync session-state
 if st.session_state.tasks != load_tasks():
-    # prefer file on disk as source-of-truth if differ
     st.session_state.tasks = load_tasks()
