@@ -776,14 +776,19 @@ function mainLoop() {{
   }}
 }}
 
-mainLoop();
-setInterval(mainLoop, 3000);
+html_auto_timer = """
+<script>
+  function playAlarmLoop() {
+      if (muted) return;
+      try {
+          alarm.loop = true;
+          alarm.play().catch(()=>{});
+          alarmPlaying = true;
+          document.getElementById('stopAlarmBtn').style.display = 'inline-block';
+      } catch(e){ console.error(e); }
+  }
 
+  mainLoop();
+  setInterval(mainLoop, 3000);
 </script>
 """
-
-st.components.v1.html(html_auto_timer, height=0, scrolling=False)
-
-# sync session-state
-if st.session_state.tasks != load_tasks():
-    st.session_state.tasks = load_tasks()
