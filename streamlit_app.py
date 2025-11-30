@@ -571,6 +571,3 @@ elif menu == "About":
     """)
 
 # ensure session-state tasks in memory sync with file
-if st.session_state.tasks != load_tasks():
-    # prefer file on disk as source-of-truth if differ
-    st.session_state.tasks = load_tasks()
