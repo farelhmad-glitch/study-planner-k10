@@ -724,16 +724,23 @@ function startCountdownFor(taskObj) {{
 
 st.components.v1.html(html_auto_timer, height=0, scrolling=False)
 
+html_auto_timer = """
+<script>
 
-function playAlarmLoop() {{
+function playAlarmLoop() {
   if (muted) return;
-  try {{
+  try {
     alarm.loop = true;
-    alarm.play().catch(()=>{{}});
+    alarm.play().catch(()=>{});
     alarmPlaying = true;
     document.getElementById('stopAlarmBtn').style.display = 'inline-block';
-  }} catch(e){{ console.error(e); }}
-}}
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+</script>
+"""
 
 function stopAlarm() {{
   try {{
